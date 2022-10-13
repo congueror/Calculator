@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <title>Congueror's Calculator</title>
+    <meta charset="utf-8">
+    <meta name="renderer" content="webkit">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+</head>
+
+<body id="body">
+
+<link rel="stylesheet" href="mathquill-0.10.1/mathquill.css"/>
+<link rel="stylesheet" href="calculator.css">
+
+<script src="https://ajax.googleapis.com/ajax/libs/jquery/3.6.0/jquery.min.js"></script>
+<script src="mathquill-0.10.1/mathquill.js"></script>
+<script src="MathHelper.js"></script>
+
+<div id="buttons1">
+    <button class="additionButton1" onclick="onAddButtonClick('1')"><mth-f>1</mth-f></button>
+    <button class="additionButton1" onclick="onAddButtonClick('2')"><mth-f>2</mth-f></button>
+    <button class="additionButton1" onclick="onAddButtonClick('3')"><mth-f>3</mth-f></button>
+    <button class="additionButton1" onclick="onAddButtonClick('+')"><mth-f>+</mth-f></button>
+    <button class="additionButton1" onclick="onAddButtonClick('4')"><mth-f>4</mth-f></button>
+    <button class="additionButton1" onclick="onAddButtonClick('5')"><mth-f>5</mth-f></button>
+    <button class="additionButton1" onclick="onAddButtonClick('6')"><mth-f>6</mth-f></button>
+    <button class="additionButton1" onclick="onAddButtonClick('-')"><mth-f>-</mth-f></button>
+    <button class="additionButton1" onclick="onAddButtonClick('7')"><mth-f>7</mth-f></button>
+    <button class="additionButton1" onclick="onAddButtonClick('8')"><mth-f>8</mth-f></button>
+    <button class="additionButton1" onclick="onAddButtonClick('9')"><mth-f>9</mth-f></button>
+    <button class="additionButton1" onclick="onAddButtonClick('\\cdot')"><mth-f>\cdot</mth-f></button>
+    <button class="additionButton1" onclick="onAddButtonClick('0')"><mth-f>0</mth-f></button>
+    <button class="additionButton1" onclick="onAddButtonClick('\\pi')"><mth-f>\pi</mth-f></button>
+    <button class="additionButton1" onclick="onAddButtonClick('e')"><mth-f>e</mth-f></button>
+    <button class="additionButton1" onclick="onAddButtonClick('\\div')"><mth-f>\div</mth-f></button>
+    <button class="additionButton1" onclick="onAddButtonClick('\\=')"><mth-f>\=</mth-f></button>
+    <button class="additionButton1" onclick="onAddButtonClick('\\(')"><mth-f>(</mth-f></button>
+    <button class="additionButton1" onclick="onAddButtonClick('\\)')"><mth-f>)</mth-f></button>
+</div>
+
+<div id="buttons2">
+    <button class="additionButton2" onclick="onAddButtonClick('\\^{\\circ}')"><mth-f>x^{\circ}</mth-f></button>
+    <button class="additionButton2" onclick="onAddButtonClick('\\frac{}{}')"><mth-f>\frac{x}{y}</mth-f></button>
+    <button class="additionButton2" onclick="onAddButtonClick('\\sqrt{}')"><mth-f>\sqrt{x}</mth-f></button>
+    <button class="additionButton2" onclick="onAddButtonClick('\\nthroot[]{}')"><mth-f>\nthroot[n]{x}</mth-f></button>
+    <button class="additionButton2" onclick="onAddButtonClick('^2')"><mth-f>x^2</mth-f></button>
+    <button class="additionButton2" onclick="onAddButtonClick('^')"><mth-f>x^n</mth-f></button>
+    <button class="additionButton2" onclick="onAddButtonClick('\\left|\\right|')"><mth-f>\left|x\right|</mth-f></button>
+    <button class="additionButton2" onclick="onAddButtonClick('\\log_{}\\left(\\right)')"><mth-f>\log_n{x}</mth-f></button>
+    <button class="additionButton2" onclick="onAddButtonClick('\\log{}\\left(\\right)')"><mth-f>\log{x}</mth-f></button>
+    <button class="additionButton2" onclick="onAddButtonClick('\\ln{}\\left(\\right)')"><mth-f>\ln{x}</mth-f></button>
+</div>
+
+<div id="buttons3">
+    <button class="additionButton3" onclick="onAddButtonClick('\\sin{}\\left(\\right)')"><mth-f>\sin{x}</mth-f></button>
+    <button class="additionButton3" onclick="onAddButtonClick('\\cos{}\\left(\\right)')"><mth-f>\cos{x}</mth-f></button>
+    <button class="additionButton3" onclick="onAddButtonClick('\\tan{}\\left(\\right)')"><mth-f>\tan{x}</mth-f></button>
+    <button class="additionButton3" onclick="onAddButtonClick('\\csc{}\\left(\\right)')"><mth-f>\csc{x}</mth-f></button>
+    <button class="additionButton3" onclick="onAddButtonClick('\\sec{}\\left(\\right)')"><mth-f>\sec{x}</mth-f></button>
+    <button class="additionButton3" onclick="onAddButtonClick('\\cot{}\\left(\\right)')"><mth-f>\cot{x}</mth-f></button>
+    <button class="additionButton3" onclick="onAddButtonClick('\\arcsin{}\\left(\\right)')"><mth-f>\arcsin{x}</mth-f></button>
+    <button class="additionButton3" onclick="onAddButtonClick('\\arccos{}\\left(\\right)')"><mth-f>\arccos{x}</mth-f></button>
+    <button class="additionButton3" onclick="onAddButtonClick('\\arctan{}\\left(\\right)')"><mth-f>\arctan{x}</mth-f></button>
+    <button class="additionButton3" onclick="onAddButtonClick('\\arccsc{}\\left(\\right)')"><mth-f>\arccsc{x}</mth-f></button>
+    <button class="additionButton3" onclick="onAddButtonClick('\\arcsec{}\\left(\\right)')"><mth-f>\arcsec{x}</mth-f></button>
+    <button class="additionButton3" onclick="onAddButtonClick('\\arccot{}\\left(\\right)')"><mth-f>\arccot{x}</mth-f></button>
+</div>
+
+<br><br><br><br><br><br><br><br><br><br><br><br><br><br>
+
+<span id="input"></span>
+
+
+<br><br>
+<canvas id="graph"></canvas>
+<br><br>
+
+<script src="generated.js"></script>
+<script src="calculator.js"></script>
+
+<form>
+    <input id="goButton" type="button" value="GO" onclick="onGoButtonClick()">
+</form>
+
+<br><br><br><br>
+
+<div id="generated"></div>
+
+</body>
+</html>

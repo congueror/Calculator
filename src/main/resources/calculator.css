@@ -1,0 +1,108 @@
+body {
+    background-color: #36393F;
+}
+
+form {
+    text-align: center;
+}
+
+input {
+    resize: none;
+    font-size: max(24px, 1em);
+    font-family: inherit;
+    color: ghostwhite;
+    border-radius: 6px;
+}
+
+#input {
+    font-size: max(24px, 1em);
+    background-color: white;
+    border: 2px solid dimgray;
+    padding: 0.0em 0.0em;
+    width: 21em;
+    position: absolute;
+    left: calc(50% - 10em);
+}
+
+#goButton {
+    background-color: red;
+    border: 2px solid darkred;
+    padding: 0.5em 0.5em;
+    position: absolute;
+    left: calc(70% - 0.5em);
+}
+
+#area {
+    margin: 3px;
+    border: 2px solid darkred;
+    padding: 10px;
+}
+
+#text {
+    color: white;
+}
+
+#text1 {
+    color: white;
+    margin-left: 20px;
+    border-left: 2px solid brown;
+    padding-left: 2px;
+}
+
+#stepByStep {
+    color: #D4D4D4;
+    padding-left: 10px;
+}
+
+#graph {
+    border: 2px solid white;
+}
+
+#buttons1 {
+    border: 2px solid slateblue;
+    padding: 3px;
+    width: 176px;
+    height: 143px;
+    position: absolute;
+    left: calc(26% - 176px / 2);
+}
+
+#buttons2 {
+    border: 2px solid blueviolet;
+    padding: 3px;
+    width: 500px;
+    position: absolute;
+    left: calc(50% - 500px / 2);
+}
+
+#buttons3 {
+    border: 2px solid cornflowerblue;
+    padding: 3px;
+    width: 225px;
+    position: absolute;
+    left: calc(76% - 225px / 2);
+}
+
+.additionButton1 {
+    color: black;
+    width: 35px;
+    display: inline-block;
+    margin-right: 6px;
+    margin-bottom: 4px;
+}
+
+.additionButton2 {
+    color: black;
+    width: 48px;
+    display: inline-block;
+    margin-right: 4px;
+    margin-bottom: 4px;
+}
+
+.additionButton3 {
+    color: black;
+    width: 68px;
+    display: inline-block;
+    margin-right: 4px;
+    margin-bottom: 4px;
+}
