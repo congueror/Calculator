@@ -1,6 +1,12 @@
-package net.congueror.calculator;
+package net.congueror.calculator.helpers;
 
-public class MathHelper {
+import net.congueror.calculator.Equation;
+
+public final class MathHelper {
+
+    private MathHelper() {}
+
+
 
     public static double sin(double a) {
         final double precision = 1e-14;

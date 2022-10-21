@@ -1,4 +1,4 @@
-package net.congueror.calculator;
+package net.congueror.calculator.helpers;
 
 public final class JSHelper {
 

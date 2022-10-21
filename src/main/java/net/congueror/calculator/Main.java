@@ -1,5 +1,6 @@
 package net.congueror.calculator;
 
+import net.congueror.calculator.helpers.JSHelper;
 import net.congueror.calculator.util.ContextMenuHandler;
 import org.cef.CefApp;
 import org.cef.CefClient;
@@ -9,7 +10,6 @@ import org.cef.browser.CefFrame;
 import org.cef.browser.CefMessageRouter;
 import org.cef.callback.CefQueryCallback;
 import org.cef.handler.CefAppHandlerAdapter;
-import org.cef.handler.CefContextMenuHandler;
 import org.cef.handler.CefMessageRouterHandler;
 
 import javax.swing.*;
@@ -137,10 +137,12 @@ public class Main extends JFrame {
         StringBuilder code = new StringBuilder(JSHelper.writeJS("""
                 var area = document.getElementById("area");
                 area.innerHTML = "<b id='text'>Solve Operation:</b> <br>";
-                """));
-        for (OperationStep step : steps) {
+                operationStep(area, "!@#1 = !@#2", "");
+                """, steps.get(0).step().toLatex(), steps.get(steps.size() - 1).step().toLatex()));
+        for (int i = 1; i < steps.size(); i++) {
+            OperationStep step = steps.get(i);
             String js = JSHelper.writeJS("""
-                    operationStep(area, "!@#1", "!@#2");
+                    operationStep(area, "=!@#1", "!@#2");
                     """, step.step().toLatex(), step.message());
             code.append(js);
         }

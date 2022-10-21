@@ -1,5 +1,6 @@
 package net.congueror.calculator;
 
+import net.congueror.calculator.helpers.MathHelper;
 import net.congueror.calculator.structure.TokenPair;
 
 import java.util.function.BiFunction;

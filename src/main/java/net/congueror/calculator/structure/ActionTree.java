@@ -1,14 +1,16 @@
 package net.congueror.calculator.structure;
 
+import com.google.common.collect.HashMultiset;
 import net.congueror.calculator.Equation;
 import net.congueror.calculator.Expression;
 import net.congueror.calculator.OperationStep;
+import net.congueror.calculator.helpers.GuavaHelper;
+import org.checkerframework.checker.units.qual.A;
 
 import java.text.DecimalFormat;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
-import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.BiConsumer;
 import java.util.stream.Collectors;
@@ -112,10 +114,10 @@ public class ActionTree implements Cloneable {
     private static boolean compareProducts(ActionTree tree1, ActionTree tree2) {
         if (tree1.value().equals("op", "\\cdot") || tree2.value().equals("op", "\\cdot")) {
             if (!tree1.value().equals("op", "\\cdot"))
-                return Set.of(tree1).equals(tree2.children.get(a -> !a.value.is("num")).collect(Collectors.toSet()));
+                return GuavaHelper.ofMultiset(tree1).equals(tree2.children.get(a -> !a.value.is("num")).collect(GuavaHelper.toHashMultiset()));
             if (!tree2.value().equals("op", "\\cdot"))
-                return tree1.children.get(a -> !a.value.is("num")).collect(Collectors.toSet()).equals(Set.of(tree2));
-            return tree1.children.get(a -> !a.value.is("num")).collect(Collectors.toSet()).equals(tree2.children.get(a -> !a.value.is("num")).collect(Collectors.toSet()));
+                return tree1.children.get(a -> !a.value.is("num")).collect(GuavaHelper.toHashMultiset()).equals(GuavaHelper.ofMultiset(tree2));
+            return tree1.children.get(a -> !a.value.is("num")).collect(GuavaHelper.toHashMultiset()).equals(tree2.children.get(a -> !a.value.is("num")).collect(GuavaHelper.toHashMultiset()));
         }
         return tree1.equals(tree2);
     }
@@ -255,6 +257,9 @@ public class ActionTree implements Cloneable {
         this.children.forEach(ActionTree::omitParentheses);
     }
 
+    /**
+     * Factors out negative signs from multiplication and applies negative sign to numbers.
+     */
     private void applyNegativeSigns() {
 
         //factor out negative sign in multiplication
@@ -297,6 +302,9 @@ public class ActionTree implements Cloneable {
         this.children.forEach(ActionTree::applyNegativeSigns);
     }
 
+    /**
+     * Executes operator identities: x * 1 = x, x * 0 = 0, x + 0 = x
+     */
     private boolean applyOperatorIdentities(StringBuilder message) {
         AtomicBoolean changed = new AtomicBoolean();
 
@@ -330,6 +338,9 @@ public class ActionTree implements Cloneable {
         return changed.get();
     }
 
+    /**
+     * Converts \\div operator to fractions
+     */
     private boolean divisionsToFractions() {
         AtomicBoolean changed = new AtomicBoolean();
 
@@ -377,16 +388,18 @@ public class ActionTree implements Cloneable {
     }
 
     /**
-     * Iterates through children and cancels any pairs of inverse numbers
-     *
-     * @return True if any inverse pairs were successfully found and cancelled.
+     * Omits fraction denominated with 1      &#x09; &#x09;     x/1 = x<br>
+     * Cancels any pairs of inverse numbers    &#x09;           x*(1/x) = 1<br>
+     * TODO: Long Division (Means and extremes)    &#x09;       (a/b)/(c/d) = ad/bc<br>
+     * TODO: Least common denominator         &#x09; &#x09;      a/b + c/d = (ad+cb)/bd<br>
+     * TODO: Merge multiplicands and fraction  &#x09;           x*(1/y) = x/y<br>
      */
     private boolean simplifyFraction(StringBuilder message) {
         AtomicBoolean changed = new AtomicBoolean();
 
         for (int i = 0; i < this.children.size(); i++) {
             var a = this.children.get(i);
-            if (a.value.equals("struct", "\\frac")) {
+            if (a.value().equals("struct", "\\frac")) {
                 var num = a.children.get(0);
                 var den = a.children.get(1);
                 if (den.value().is("num") && Double.parseDouble(den.value().value()) == 1) {
@@ -396,29 +409,59 @@ public class ActionTree implements Cloneable {
                     message.append("A denominator of 1 can be ignored in division such that <mth-f> \\frac{x}{1} = x </mth-f>");
                     changed.set(true);
                     break;
+                } else if (this.value().equals("op", "\\cdot")) {
+                    ActionTree product = new ActionTree(new TokenPair("op", "\\cdot"));
+                    this.children.get(actionTree -> !actionTree.value().equals("struct", "\\frac")).forEach(product::insert);
+                    if (num.value().equals("op", "\\cdot"))
+                        num.children.forEach(product::insert);
+                    else
+                        product.insert(num);
+
+                    product.encOperator = num.encOperator;
+                    a.children.set(0, product);
+
+                    this.value = a.value();
+                    this.children = a.children;
+
+                    message.append("Calculate product using <mth-f>x \\cdot \\frac{1}{y} = \\frac{x}{y}</mth-f> rule.");
+                    changed.set(true);
                 } else if (num.value().equals("op", "\\cdot") && den.value().equals("op", "\\cdot")) {
-                    ArrayList<Integer> ints = new ArrayList<>();
-                    for (int j = 0; j < num.children.size(); j++) {
-                        if (den.children.contains(num.children.get(j))) {
-                            ints.add(j);
-                        }
-                    }
-
-                    ArrayList<Integer> ints1 = new ArrayList<>();
-                    for (int j = 0; j < den.children.size(); j++) {
-                        if (num.children.contains(den.children.get(j))) {
-                            ints1.add(j);
-                        }
-                    }
-
-                    if (!ints.isEmpty() || !ints1.isEmpty()) {
-                        num.children.removeIndices(ints);
-                        den.children.removeIndices(ints1);
-
+                    var numerator = GuavaHelper.ofMultiset(num.children.toArray(ActionTree[]::new));
+                    var denominator = GuavaHelper.ofMultiset(den.children.toArray(ActionTree[]::new));
+                    var crossed = numerator.stream().filter(denominator::contains).collect(GuavaHelper.toHashMultiset());
+                    for (ActionTree b : crossed) {
+                        num.children.remove(b);
+                        den.children.remove(b);
                         message.append("Cancel out inverse pairs using <mth-f>x \\cdot \\frac{1}{x} = 1</mth-f> rule.");
                         changed.set(true);
                         break;
                     }
+                } else if (num.value().equals("op", "\\cdot") || den.value().equals("op", "\\cdot")) {
+                    ActionTree root = null;
+                    ActionTree opposite = null;
+
+                    if (!num.value().equals("op", "\\cdot")) {
+                        root = num;
+                        opposite = den;
+                    } else if (!den.value().equals("op", "\\cdot")) {
+                        root = den;
+                        opposite = num;
+                    }
+
+                    HashMultiset<ActionTree> set = GuavaHelper.ofMultiset(root);
+                    for (ActionTree b : opposite.children.get(set::contains).toList()) {
+                        root.value = new TokenPair("num", "1.0");
+                        root.children.clear();
+                        opposite.children.remove(b);
+                        message.append("Cancel out inverse pairs using <mth-f>x \\cdot \\frac{1}{x} = 1</mth-f> rule.");
+                        changed.set(true);
+                        break;
+                    }
+                } else if (num.equals(den)) {
+                    a.value = new TokenPair("num", "1.0");
+                    a.children.clear();
+                    message.append("Cancel out inverse pairs using <mth-f>x \\cdot \\frac{1}{x} = 1</mth-f> rule.");
+                    changed.set(true);
                 }
             }
         }
@@ -431,6 +474,10 @@ public class ActionTree implements Cloneable {
         return changed.get();
     }
 
+    /**
+     * Executes operators for numbers. <br>
+     * Executes + for common factors.
+     */
     private boolean executeOperators(StringBuilder message) {
         AtomicBoolean changed = new AtomicBoolean();
 
@@ -466,8 +513,8 @@ public class ActionTree implements Cloneable {
                     if (this.children.size() == 1) {
                         this.value = this.children.get(0).value;
                         this.children.clear();
-                        if (this.value.is("num") && !this.value.value().contains("-"))
-                            this.encOperator = null;
+                        //if (this.value.is("num") && !this.value.value().contains("-"))
+                        //    this.encOperator = null;
                     }
                     nums = this.children.get(a -> a.value.is("num")).collect(Collectors.toCollection(ExtendedList::new));
                     changed.set(true);
@@ -479,7 +526,6 @@ public class ActionTree implements Cloneable {
                 int last1 = 0;
                 int last2 = -1;
                 while (non_nums.size() > last1) {
-                    //4e+ pi + e
                     ActionTree child1 = null;
                     ActionTree child2 = null;
 
@@ -552,6 +598,9 @@ public class ActionTree implements Cloneable {
         return changed.get();
     }
 
+    /**
+     * Executes trigonometric functions.
+     */
     private boolean executeTrigonometricFunctions(StringBuilder message) {
         AtomicBoolean changed = new AtomicBoolean();
 
@@ -580,6 +629,9 @@ public class ActionTree implements Cloneable {
         return changed.get();
     }
 
+    /**
+     * TODO
+     */
     private boolean executeMathematicalConstruct(StringBuilder message) {
         AtomicBoolean changed = new AtomicBoolean();
 
@@ -598,9 +650,7 @@ public class ActionTree implements Cloneable {
     }
 
     /**
-     * Iterates through children and converts constants to their numbers.
-     *
-     * @return True if any constants were successfully found and converted.
+     * Converts constants to numbers
      */
     private boolean constToNum(StringBuilder message) {
         AtomicBoolean changed = new AtomicBoolean();
