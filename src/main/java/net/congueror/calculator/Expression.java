@@ -1,6 +1,8 @@
 package net.congueror.calculator;
 
 import net.congueror.calculator.helpers.MathHelper;
+import net.congueror.calculator.structure.ActionTree;
+import net.congueror.calculator.structure.ExtendedList;
 import net.congueror.calculator.structure.TokenPair;
 
 import java.util.function.BiFunction;
@@ -16,10 +18,20 @@ public abstract class Expression {
 
     public static void registerExpressions() {
         Equation.EXPRESSIONS.clear();
+        Equation.EXPRESSIONS.put("=", new ComparisonOperator());
+        Equation.EXPRESSIONS.put("\\ne", new ComparisonOperator());
+        Equation.EXPRESSIONS.put(">", new ComparisonOperator());
+        Equation.EXPRESSIONS.put("<", new ComparisonOperator());
+        Equation.EXPRESSIONS.put("\\ge", new ComparisonOperator());
+        Equation.EXPRESSIONS.put("\\le", new ComparisonOperator());
+
+        Equation.EXPRESSIONS.put("\\implies", new LogicOperator());
+
         Equation.EXPRESSIONS.put("+", new Operator(Double::sum, "sum"));
         Equation.EXPRESSIONS.put("-", new DelegateOperator(new TokenPair("op", "+")));
         Equation.EXPRESSIONS.put("\\cdot", new Operator((a, b) -> a * b, "product"));
         Equation.EXPRESSIONS.put("\\div", new DelegateOperator(new TokenPair("op", "\\cdot")));
+
         Equation.EXPRESSIONS.put("\\left(", new EncapsulationOperator(new TokenPair("encOp", "\\right)"), true));
         Equation.EXPRESSIONS.put("\\right)", new EncapsulationOperator(new TokenPair("encOp", "\\left("), false));
         Equation.EXPRESSIONS.put("{", new EncapsulationOperator(new TokenPair("encOp", "}"), true));
@@ -44,6 +56,8 @@ public abstract class Expression {
         Equation.EXPRESSIONS.put("\\arccot", new TrigonometricFunction("arccotangent", a -> MathHelper.arctan(1 / a), true));
     }
 
+    public abstract void toLatex(StringBuilder ltx, TokenPair value, ExtendedList<ActionTree> children);
+
     /**
      * childrenAmount >= 2
      */
@@ -64,6 +78,17 @@ public abstract class Expression {
         public String verbose() {
             return verbose;
         }
+
+        @Override
+        public void toLatex(StringBuilder ltx, TokenPair value, ExtendedList<ActionTree> children) {
+            for (int i = 0; i < children.size(); i++) {
+                ActionTree child = children.get(i);
+                if (i > 0 && !child.value().is("delOp") && (!child.value().is("num") || !child.value().value().contains("-"))) {
+                    ltx.append(value.value()).append(" ");
+                }
+                ltx.append(child.toLatex());
+            }
+        }
     }
 
     /**
@@ -79,6 +104,11 @@ public abstract class Expression {
 
         public TokenPair getDelegate() {
             return delegate;
+        }
+
+        @Override
+        public void toLatex(StringBuilder ltx, TokenPair value, ExtendedList<ActionTree> children) {
+            ltx.append(value.value()).append(children.get(0).toLatex());
         }
     }
 
@@ -102,6 +132,41 @@ public abstract class Expression {
         public boolean isLeft() {
             return isLeft;
         }
+
+        @Override
+        public void toLatex(StringBuilder ltx, TokenPair value, ExtendedList<ActionTree> children) {
+            Expression.EncapsulationOperator op1 = ((Expression.EncapsulationOperator) Equation.EXPRESSIONS.get(value.value()));
+            ltx.append(value.value()).append(children.get(0).toLatex()).append(op1.counterpart().value());
+        }
+    }
+
+    /**
+     * childrenAmount == 2
+     */
+    public static class ComparisonOperator extends Expression {
+
+        public ComparisonOperator() {
+            super("comparison");
+        }
+
+        @Override
+        public void toLatex(StringBuilder ltx, TokenPair value, ExtendedList<ActionTree> children) {
+            ltx.append(children.get(0).toLatex());
+            ltx.append(value.value());
+            ltx.append(children.get(1).toLatex());
+        }
+    }
+
+    public static class LogicOperator extends Expression {
+
+        public LogicOperator() {
+            super("logic");
+        }
+
+        @Override
+        public void toLatex(StringBuilder ltx, TokenPair value, ExtendedList<ActionTree> children) {
+            ltx.append(value.value());
+        }
     }
 
     public static class Construct extends Expression {
@@ -114,6 +179,14 @@ public abstract class Expression {
 
         public int inputs() {
             return inputs;
+        }
+
+        @Override
+        public void toLatex(StringBuilder ltx, TokenPair value, ExtendedList<ActionTree> children) {
+            ltx.append(value.value());
+            for (ActionTree child : children) {
+                ltx.append(child.toLatex());
+            }
         }
     }
 
@@ -149,6 +222,11 @@ public abstract class Expression {
         public boolean isInverse() {
             return inverse;
         }
+
+        @Override
+        public void toLatex(StringBuilder ltx, TokenPair value, ExtendedList<ActionTree> children) {
+            ltx.append(value.value()).append(children.get(0).toLatex());
+        }
     }
 
     /**
@@ -165,6 +243,11 @@ public abstract class Expression {
 
         public double getValue() {
             return value;
+        }
+
+        @Override
+        public void toLatex(StringBuilder ltx, TokenPair value, ExtendedList<ActionTree> children) {
+            ltx.append(value.value());
         }
     }
 }

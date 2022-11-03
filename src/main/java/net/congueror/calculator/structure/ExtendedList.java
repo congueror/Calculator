@@ -16,6 +16,10 @@ public class ExtendedList<E> extends ArrayList<E> {
         super(c);
     }
 
+    public E last() {
+        return this.get(this.size() - 1);
+    }
+
     public E getOr(int index, E orValue) {
         if (this.size() > index && this.get(index) != null)
             return this.get(index);

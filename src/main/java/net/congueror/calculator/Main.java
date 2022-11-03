@@ -103,7 +103,7 @@ public class Main extends JFrame {
                     request = Main.this.calculate(request);
                 } catch (ArithmeticException e) {
                     e.printStackTrace();
-                    callback.failure(0, e.getMessage());
+                    callback.failure(-1, e.getMessage());
                     return false;
                 }
 
@@ -115,17 +115,28 @@ public class Main extends JFrame {
         client.addMessageRouter(cmr);
     }
 
-    /*
-    2+\left(8-9\right)\cdot4\cdot9\div4+e-\pi-1
-    3e+\left(8+\left(4-3\right)\right)2
-    \sin\left(180\right)-\cos\left(2\pi\right)\arctan1
-    \frac{2\pi }{2e}
-    2e+3e+4+5
-     */
-
     public String calculate(String equation) {
         Equation eq = new Equation(equation);
-        var steps = eq.solveOperation();
+        var actions = eq.getActions();
+        var eval = new StringBuilder();
+        eval.append(JSHelper.writeJS("""
+                var area = document.getElementById("area");
+                area.innerHTML = "";
+                """));
+
+        for (Equation.EquationActions action : actions) {
+            if (action.equals(Equation.EquationActions.SIMPLIFY))
+                simplify(eval, eq);
+            if (action.equals(Equation.EquationActions.COMPARE))
+                compare(eval, eq);
+            eval.append("area.innerHTML += \"<br>\"");
+        }
+
+        return eval.toString();
+    }
+
+    private void simplify(StringBuilder eval, Equation eq) {
+        var steps = eq.simplifyExpression();
 
         AtomicInteger yes = new AtomicInteger(0);
         steps.forEach(o -> {
@@ -134,19 +145,18 @@ public class Main extends JFrame {
             yes.incrementAndGet();
         });
 
-        StringBuilder code = new StringBuilder(JSHelper.writeJS("""
-                var area = document.getElementById("area");
-                area.innerHTML = "<b id='text'>Solve Operation:</b> <br>";
-                operationStep(area, "!@#1 = !@#2", "");
-                """, steps.get(0).step().toLatex(), steps.get(steps.size() - 1).step().toLatex()));
-        for (int i = 1; i < steps.size(); i++) {
-            OperationStep step = steps.get(i);
+        eval.append(JSHelper.writeJS("""
+                area.innerHTML += "<b id='text'>Simplify Expression:</b> <br>";
+                """));
+        for (OperationStep step : steps) {
             String js = JSHelper.writeJS("""
-                    operationStep(area, "=!@#1", "!@#2");
-                    """, step.step().toLatex(), step.message());
-            code.append(js);
+                    operationStep(area, "!@#3 !@#1", "!@#2");
+                    """, step.step().toLatex(), step.message(), step.prefix());
+            eval.append(js);
         }
+    }
 
-        return code.toString();
+    private void compare(StringBuilder eval, Equation eq) {
+
     }
 }

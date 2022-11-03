@@ -3,10 +3,21 @@ package net.congueror.calculator.helpers;
 import net.congueror.calculator.Equation;
 
 public final class MathHelper {
+    private static final double precision = 1e14;
 
     private MathHelper() {}
 
+    public static double gcd(double a, double b) {
+        a *= precision;
+        b *= precision;
 
+        while (b != 0) {
+            double temp = a;
+            a = b;
+            b = temp % b;
+        }
+        return a / precision;
+    }
 
     public static double sin(double a) {
         final double precision = 1e-14;

@@ -13,6 +13,7 @@ public class Equation {
 
     private final ExtendedList<TokenPair> tokens = new ExtendedList<>();
     private final ActionTree root;
+    private boolean comparing;
 
     public Equation(String equation) {
         this.tokenize(equation);
@@ -338,6 +339,43 @@ public class Equation {
             }
         }
 
+        for (int i = 0; i < tokens.size(); i++) {
+            if (tokens.get(i).is("comparison")) {
+                if (comparing)
+                    throw new ArithmeticException("Cannot have more than 1 comparison operator");
+                comparing = true;
+                try {
+                    ActionTree child = new ActionTree(tokens.get(i));
+
+                    var pair1 = tokens.get(i - 1);
+                    var pair2 = tokens.get(i + 1);
+
+                    ActionTree at1;
+                    ActionTree at2;
+
+                    if (pair1.is("node"))
+                        at1 = nodes.get(Integer.parseInt(pair1.value().substring(4)));
+                    else
+                        at1 = new ActionTree(pair1);
+
+                    if (pair2.is("node"))
+                        at2 = nodes.get(Integer.parseInt(pair2.value().substring(4)));
+                    else
+                        at2 = new ActionTree(pair2);
+
+                    child.insert(at1);
+                    child.insert(at2);
+                    nodes.add(child);
+
+                    tokens.removeRange(i - 1, 3);
+                    tokens.add(i - 1, new TokenPair("node", "node" + (nodes.size() - 1)));
+                } catch (IndexOutOfBoundsException e) {
+                    comparing = false;
+                    tokens.remove(i);
+                }
+            }
+        }
+
         for (TokenPair token : tokens) {
             ActionTree at;
 
@@ -354,11 +392,38 @@ public class Equation {
         return root.getChild();
     }
 
-    public ExtendedList<OperationStep> solveOperation() {
+    public ExtendedList<EquationActions> getActions() {
+        var a = new ExtendedList<EquationActions>();
+        if (comparing)
+            a.add(EquationActions.COMPARE);
+        else
+            a.add(EquationActions.SIMPLIFY);
+        return a;
+    }
+
+    public ExtendedList<OperationStep> simplifyExpression() {
         ExtendedList<OperationStep> steps = new ExtendedList<>();
 
-        root.solveOperation(root, steps);
+        root.simplifyExpression(root, steps);
+
+        var beginning = new ActionTree(new TokenPair("comparison", "="));
+        beginning.insert(steps.get(0).step().getChild());
+        beginning.insert(steps.last().step().getChild());
+        steps.add(0, new OperationStep(beginning, "", ""));
+
+        steps.remove(1);
 
         return steps;
+    }
+
+    public ExtendedList<OperationStep> compareExpression() {
+        ExtendedList<OperationStep> steps = new ExtendedList<>();
+
+        return steps;
+    }
+
+    enum EquationActions {
+        SIMPLIFY,
+        COMPARE
     }
 }

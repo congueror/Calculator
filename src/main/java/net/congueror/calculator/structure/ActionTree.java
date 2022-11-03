@@ -5,7 +5,7 @@ import net.congueror.calculator.Equation;
 import net.congueror.calculator.Expression;
 import net.congueror.calculator.OperationStep;
 import net.congueror.calculator.helpers.GuavaHelper;
-import org.checkerframework.checker.units.qual.A;
+import net.congueror.calculator.helpers.MathHelper;
 
 import java.text.DecimalFormat;
 import java.util.ArrayList;
@@ -16,6 +16,8 @@ import java.util.function.BiConsumer;
 import java.util.stream.Collectors;
 
 public class ActionTree implements Cloneable {
+    private static final DecimalFormat FORMAT = new DecimalFormat("#.##");
+    private static final double precision = 1e14;
     private int depth;
     private TokenPair encOperator = null;
     private TokenPair value;
@@ -117,7 +119,9 @@ public class ActionTree implements Cloneable {
                 return GuavaHelper.ofMultiset(tree1).equals(tree2.children.get(a -> !a.value.is("num")).collect(GuavaHelper.toHashMultiset()));
             if (!tree2.value().equals("op", "\\cdot"))
                 return tree1.children.get(a -> !a.value.is("num")).collect(GuavaHelper.toHashMultiset()).equals(GuavaHelper.ofMultiset(tree2));
-            return tree1.children.get(a -> !a.value.is("num")).collect(GuavaHelper.toHashMultiset()).equals(tree2.children.get(a -> !a.value.is("num")).collect(GuavaHelper.toHashMultiset()));
+            var set1 = tree1.children.get(a -> !a.value.is("num")).collect(GuavaHelper.toHashMultiset());
+            var set2 = tree2.children.get(a -> !a.value.is("num")).collect(GuavaHelper.toHashMultiset());
+            return !set1.isEmpty() && !set2.isEmpty() && set1.equals(set2);
         }
         return tree1.equals(tree2);
     }
@@ -126,6 +130,15 @@ public class ActionTree implements Cloneable {
         if (tree.value().equals("op", "\\cdot"))
             return tree.children.get(a -> a.value.is("num")).map(a -> a.value().value()).collect(ExtendedList.toList()).getOr(0, "1.0");
         return "1.0";
+    }
+
+    private static void removeAddition(ActionTree tree) {
+        if (tree.children.size() == 1) {
+            tree.value = tree.children.get(0).value;
+            tree.children = tree.children.get(0).children;
+            if (tree.value.is("num") && !tree.value.value().contains("-") && (tree.encOperator == null || tree.encOperator.has("(")))
+                tree.encOperator = null;
+        }
     }
 
     public String toLatex() {
@@ -140,30 +153,14 @@ public class ActionTree implements Cloneable {
             ltx.append(this.encOperator.value());
         }
 
+
         if (this.value.is("num")) {
-            var yes = new DecimalFormat("#.##");
-            ltx.append(yes.format(Double.parseDouble(this.value.value())));
-        } else if (this.value.isOr("const"))
+            ltx.append(FORMAT.format(Double.parseDouble(this.value.value())));
+        } else if (this.value.is("var")) {
             ltx.append(this.value.value());
-        else if (this.value.isOr("delOp", "trigFun")) {
-            ltx.append(this.value.value()).append(this.children.get(0).toLatex());
-        } else if (this.value.is("encOp")) {
-            Expression.EncapsulationOperator op1 = ((Expression.EncapsulationOperator) Equation.EXPRESSIONS.get(this.value.value()));
-            ltx.append(this.value.value()).append(this.children.get(0).toLatex()).append(op1.counterpart().value());
-        } else if (this.value.is("struct")) {
-            ltx.append(this.value.value());
-            for (ActionTree child : this.children) {
-                ltx.append(child.toLatex());
-            }
-        } else if (this.value.is("op")) {
-            for (int i = 0; i < this.children.size(); i++) {
-                ActionTree child = this.children.get(i);
-                if (i > 0 && !child.value.is("delOp") && (!child.value.is("num") || !child.value.value().contains("-"))) {
-                    ltx.append(this.value.value()).append(" ");
-                }
-                ltx.append(child.toLatex());
-            }
-        }
+        } else
+            Equation.EXPRESSIONS.get(this.value().value()).toLatex(ltx, this.value, this.children);
+
 
         if (op != null)
             ltx.append(op.counterpart().value());
@@ -171,17 +168,30 @@ public class ActionTree implements Cloneable {
         return ltx.toString();
     }
 
-    public void solveOperation(ActionTree root, ExtendedList<OperationStep> steps) {
+    public void simplifyExpression(ActionTree root, ExtendedList<OperationStep> steps) {
         if (this.value.is("root")) {
             ActionTree rootCl = root._clone();
             rootCl.omitParentheses();
             rootCl.applyNegativeSigns();
-            steps.add(new OperationStep(rootCl, ""));
-            this.children.get(0).solveOperation(root, steps);
+            steps.add(new OperationStep(rootCl, "", ""));
+            this.children.get(0).simplifyExpression(root, steps);
             return;
         }
 
-        root.execute((a, b) -> steps.add(new OperationStep(a._clone(), b)));
+        root.execute((a, b) -> steps.add(new OperationStep(a._clone(), b, "=")));
+    }
+
+    public void compareExpression(ActionTree root, ExtendedList<OperationStep> steps) {
+        if (this.value.is("root")) {
+            ActionTree rootCl = root._clone();
+            rootCl.omitParentheses();
+            rootCl.applyNegativeSigns();
+            steps.add(new OperationStep(rootCl, "", ""));
+            this.children.get(0).compareExpression(root, steps);
+            return;
+        }
+
+        root.execute((a, b) -> steps.add(new OperationStep(a._clone(), b, "\\implies")));
     }
 
     private void execute(BiConsumer<ActionTree, String> onChange) {
@@ -388,11 +398,11 @@ public class ActionTree implements Cloneable {
     }
 
     /**
-     * Omits fraction denominated with 1      &#x09; &#x09;     x/1 = x<br>
-     * Cancels any pairs of inverse numbers    &#x09;           x*(1/x) = 1<br>
-     * TODO: Long Division (Means and extremes)    &#x09;       (a/b)/(c/d) = ad/bc<br>
-     * TODO: Least common denominator         &#x09; &#x09;      a/b + c/d = (ad+cb)/bd<br>
-     * TODO: Merge multiplicands and fraction  &#x09;           x*(1/y) = x/y<br>
+     * Omits fraction denominated with 1      &#x09; &#x09;     x/1 = x <br>
+     * Cancels any pairs of inverse numbers    &#x09;           x*(1/x) = 1 <br>
+     * Long Division (Means and extremes)    &#x09;       (a/b)/(c/d) = ad/bc <br>
+     * Merge multiplicands and fraction  &#x09;&#x09;           x*(1/y) = x/y <br>
+     * Simplify with GCD      &#x09;&#x09;                  x/y = (x * gcd(x, y)) / (y * gcd(x, y)) <br>
      */
     private boolean simplifyFraction(StringBuilder message) {
         AtomicBoolean changed = new AtomicBoolean();
@@ -407,6 +417,47 @@ public class ActionTree implements Cloneable {
                     a.children = num.children;
 
                     message.append("A denominator of 1 can be ignored in division such that <mth-f> \\frac{x}{1} = x </mth-f>");
+                    changed.set(true);
+                    break;
+                } else if (num.value().has("\\frac") || den.value().has("\\frac")) {
+                    ActionTree num1;
+                    ActionTree den1;
+                    ActionTree num2;
+                    ActionTree den2;
+
+                    if (!num.value().has("\\frac")) {
+                        num1 = num;
+                        den1 = new ActionTree(new TokenPair("num", "1.0"));
+                        num2 = den.children.get(0);
+                        den2 = den.children.get(1);
+                    } else if (!den.value().has("\\frac")) {
+                        num1 = num.children.get(0);
+                        den1 = num.children.get(1);
+                        num2 = den;
+                        den2 = new ActionTree(new TokenPair("num", "1.0"));
+                    } else {
+                        num1 = num.children.get(0);
+                        den1 = num.children.get(1);
+                        num2 = den.children.get(0);
+                        den2 = den.children.get(1);
+                    }
+
+                    var newFrac = new ActionTree(new TokenPair("struct", "\\frac"));
+                    var newNum = new ActionTree(new TokenPair("op", "\\cdot"));
+                    newNum.encOperator = num.encOperator;
+                    newNum.insert(num1);
+                    newNum.insert(den2);
+                    var newDen = new ActionTree(new TokenPair("op", "\\cdot"));
+                    newDen.encOperator = num.encOperator;
+                    newDen.insert(den1);
+                    newDen.insert(num2);
+                    newFrac.insert(newNum);
+                    newFrac.insert(newDen);
+
+                    this.value = newFrac.value();
+                    this.children = newFrac.children;
+
+                    message.append("Simplify long division using <mth-f>\\frac{ \\frac{a}{b} }{ \\frac{c}{d} } = \\frac{ a \\cdot d }{ b \\cdot c }</mth-f> rule.");
                     changed.set(true);
                     break;
                 } else if (this.value().equals("op", "\\cdot")) {
@@ -436,6 +487,23 @@ public class ActionTree implements Cloneable {
                         changed.set(true);
                         break;
                     }
+
+                    if (!changed.get()) {
+                        var nums1 = num.children.get(at -> at.value().is("num"));
+                        var nums2 = den.children.get(at -> at.value().is("num"));
+                        if (nums1.count() == 1 && nums2.count() == 1) {
+                            var num1 = nums1.findAny().orElse(null);
+                            var num2 = nums2.findAny().orElse(null);
+
+                            double d1 = Double.parseDouble(num1.value().value());
+                            double d2 = Double.parseDouble(num2.value().value());
+                            double gcd = MathHelper.gcd(d1, d2);
+                            num1.value = new TokenPair("num", "" + (d1 / gcd));
+                            num2.value = new TokenPair("num", "" + (d2 / gcd));
+                            message.append("Simplify by dividing the numbers ").append(d1).append(" and ").append(d2).append(" by their GCD(Greatest Common Divisor).");
+                            changed.set(true);
+                        }
+                    }
                 } else if (num.value().equals("op", "\\cdot") || den.value().equals("op", "\\cdot")) {
                     ActionTree root = null;
                     ActionTree opposite = null;
@@ -457,10 +525,33 @@ public class ActionTree implements Cloneable {
                         changed.set(true);
                         break;
                     }
+
+                    if (!changed.get()) {
+                        var nums = opposite.children.get(at -> at.value().is("num"));
+                        if (root.value().is("num") && nums.count() == 1) {
+                            var number = nums.findAny().orElse(null);
+
+                            double d1 = Double.parseDouble(root.value().value());
+                            double d2 = Double.parseDouble(number.value().value());
+                            double gcd = MathHelper.gcd(d1, d2);
+                            root.value = new TokenPair("num", "" + (d1 / gcd));
+                            number.value = new TokenPair("num", "" + (d2 / gcd));
+                            message.append("Simplify by dividing the numbers ").append(d1).append(" and ").append(d2).append(" by their GCD(Greatest Common Divisor).");
+                            changed.set(true);
+                        }
+                    }
                 } else if (num.equals(den)) {
                     a.value = new TokenPair("num", "1.0");
                     a.children.clear();
                     message.append("Cancel out inverse pairs using <mth-f>x \\cdot \\frac{1}{x} = 1</mth-f> rule.");
+                    changed.set(true);
+                } else if (num.value().is("num") && den.value().is("num")) {
+                    double d1 = Double.parseDouble(num.value().value());
+                    double d2 = Double.parseDouble(den.value().value());
+                    double gcd = MathHelper.gcd(d1, d2);
+                    num.value = new TokenPair("num", "" + (d1 / gcd));
+                    den.value = new TokenPair("num", "" + (d2 / gcd));
+                    message.append("Simplify by dividing the numbers ").append(d1).append(" and ").append(d2).append(" by their GCD(Greatest Common Divisor).");
                     changed.set(true);
                 }
             }
@@ -476,13 +567,14 @@ public class ActionTree implements Cloneable {
 
     /**
      * Executes operators for numbers. <br>
-     * Executes + for common factors.
+     * Addition for common factors       &#x09; &#x09;     ax + bx = (a + b)x <br>
+     * Least common denominator         &#x09; &#x09;      a/b + c/d = (ad+cb)/bd <br>
      */
     private boolean executeOperators(StringBuilder message) {
         AtomicBoolean changed = new AtomicBoolean();
 
         if (this.value.is("op")) {
-            Expression.Operator op = null;
+            String msg = "";
             var nums = this.children.get(a -> a.value.is("num")).collect(Collectors.toCollection(ExtendedList::new));
             while (nums.size() > 1) {
                 ActionTree child1 = null;
@@ -507,17 +599,13 @@ public class ActionTree implements Cloneable {
                     if (!this.children.remove(child2))
                         System.out.println("Child did not exist in list, so remove function is SHITE");
 
-                    op = (Expression.Operator) Equation.EXPRESSIONS.get(this.value.value());
+                    Expression.Operator op = (Expression.Operator) Equation.EXPRESSIONS.get(this.value.value());
                     this.children.add(new ActionTree(new TokenPair(op.apply(val1, val2))));
 
-                    if (this.children.size() == 1) {
-                        this.value = this.children.get(0).value;
-                        this.children.clear();
-                        //if (this.value.is("num") && !this.value.value().contains("-"))
-                        //    this.encOperator = null;
-                    }
+                    removeAddition(this);
                     nums = this.children.get(a -> a.value.is("num")).collect(Collectors.toCollection(ExtendedList::new));
                     changed.set(true);
+                    msg = "Calculate the " + op.verbose() + " of " + FORMAT.format(val1) + " and " + FORMAT.format(val2);
                 }
             }
 
@@ -550,7 +638,43 @@ public class ActionTree implements Cloneable {
                     if (child1 == null || child2 == null)
                         break;
                     else if (this.value().has("+")) {
-                        if (compareProducts(child1, child2)) {
+                        if (child1.value().equals("struct", "\\frac") && child2.value().equals("struct", "\\frac")) {
+                            var a = child1.children.get(0);
+                            var b = child1.children.get(1);
+                            var c = child2.children.get(0);
+                            var d = child2.children.get(1);
+
+                            var newFrac = new ActionTree(new TokenPair("struct", "\\frac"));
+
+                            var newNum = new ActionTree(new TokenPair("op", "+"));
+                            var ad = new ActionTree(new TokenPair("op", "\\cdot"));
+                            ad.insert(a);
+                            ad.insert(d);
+                            var cb = new ActionTree(new TokenPair("op", "\\cdot"));
+                            cb.insert(c);
+                            cb.insert(b);
+                            newNum.insert(ad);
+                            newNum.insert(cb);
+                            newNum.encOperator = a.encOperator;
+
+                            var newDen = new ActionTree(new TokenPair("op", "\\cdot"));
+                            newDen.insert(b);
+                            newDen.insert(d);
+                            newDen.encOperator = b.encOperator;
+
+                            newFrac.insert(newNum);
+                            newFrac.insert(newDen);
+
+                            this.children.remove(child1);
+                            this.children.remove(child2);
+                            this.children.add(newFrac);
+
+                            removeAddition(this);
+
+                            non_nums = this.children.get(at -> !at.value.is("num")).collect(Collectors.toCollection(ExtendedList::new));
+                            changed.set(true);
+                            msg = "Find Least Common Denominator (LCD) and rewrite the fraction using <mth-f> \\frac{a}{b} + \\frac{c}{d} = \\frac{a \\cdot d + c \\cdot b}{b \\cdot d} </mth-f> rule.";
+                        } else if (compareProducts(child1, child2)) {
                             double val1 = Double.parseDouble(getProductValue(child1));
                             double val2 = Double.parseDouble(getProductValue(child2));
 
@@ -567,16 +691,11 @@ public class ActionTree implements Cloneable {
                             this.children.remove(child2);
                             this.children.add(at);
 
-                            if (this.children.size() == 1) {
-                                this.value = this.children.get(0).value;
-                                this.children = this.children.get(0).children;
-                                if (this.value.is("num") && !this.value.value().contains("-"))
-                                    this.encOperator = null;
-                            }
+                            removeAddition(this);
 
                             non_nums = this.children.get(a -> !a.value.is("num")).collect(Collectors.toCollection(ExtendedList::new));
                             changed.set(true);
-                            op = (Expression.Operator) Equation.EXPRESSIONS.get("+");
+                            msg = "Add the coefficients of the common factors.";
                         }
                     } else {
                         break;
@@ -585,12 +704,10 @@ public class ActionTree implements Cloneable {
             }
 
             if (changed.get())
-                message.append("Calculate the ").append(op.verbose());
+                message.append(msg);
         }
 
-        this.children.forEach(a ->
-
-        {
+        this.children.forEach(a -> {
             if (!changed.get() && a.executeOperators(message))
                 changed.set(true);
         });
@@ -632,7 +749,7 @@ public class ActionTree implements Cloneable {
     /**
      * TODO
      */
-    private boolean executeMathematicalConstruct(StringBuilder message) {
+    private boolean executeConstruct(StringBuilder message) {
         AtomicBoolean changed = new AtomicBoolean();
 
         this.children.get(a -> a.value.is("struct")).forEach(a -> {
@@ -642,7 +759,7 @@ public class ActionTree implements Cloneable {
         });
 
         this.children.forEach(a -> {
-            if (!changed.get() && a.executeMathematicalConstruct(message))
+            if (!changed.get() && a.executeConstruct(message))
                 changed.set(true);
         });
 
