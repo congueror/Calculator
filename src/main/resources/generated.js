@@ -46,7 +46,7 @@ function draw() {
     var axes = {}, ctx = canvas.getContext("2d");
     axes.x0 = .5 + .5 * canvas.width;  // x0 pixels from left to x=0
     axes.y0 = .5 + .5 * canvas.height; // y0 pixels from top to y=0
-    axes.scale = 80 + (scroll > 0 ? (scroll % 8) * 3 : (scroll % 8) * 3);                   // pixels from x=0 to x=1 TODO: Make dynamic depending on function domain and range.
+    axes.scale = 80 /*+ (scroll > 0 ? (scroll % 8) * 3 : (scroll % 8) * 3)*/;                   // pixels from x=0 to x=1 TODO: Make dynamic depending on function domain and range.
     axes.doNegativeX = true;
 
     showAxes(ctx, axes);
@@ -88,10 +88,10 @@ function showAxes(ctx, axes) {
     for (let i = 10; i > 0; i--) {
         ctx.font = '20px mono-space';
         ctx.fillStyle = axesColor;
+        scroll = 0;
         let inx = -Math.floor(scroll / 8);
         if (scroll > 0)
             inx -= 1;
-        console.log(inx + ": " + scroll);
 
         let num;
         if (inx % 3 === 0) num = i * Math.pow(10, Math.floor((inx) / 3));

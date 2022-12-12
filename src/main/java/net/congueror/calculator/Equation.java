@@ -14,6 +14,7 @@ public class Equation {
     private final ExtendedList<TokenPair> tokens = new ExtendedList<>();
     private final ActionTree root;
     private boolean comparing;
+    private boolean hasVars;
 
     public Equation(String equation) {
         this.tokenize(equation);
@@ -100,6 +101,7 @@ public class Equation {
                 pos++;
             } else if (funChars.contains(Character.toString(chars[pos]))) {
                 tokens.add(new TokenPair("var", Character.toString(chars[pos])));
+                hasVars = true;
                 pos++;
             } else if (chars[pos] == ' ') {
                 pos++;
@@ -163,11 +165,11 @@ public class Equation {
             if (tokens.get(i).equals("op", "+") && (i - 1 < 0 || tokens.get(i - 1).is("op"))) {
                 tokens.remove(i);
                 i = 0;
-            } else if (tokens.get(i).isOr("num", "const")) {
-                if (i - 1 >= 0 && tokens.get(i - 1).isOr("const", "encOp", "node")) {
+            } else if (tokens.get(i).isOr("num", "const", "var")) {
+                if (i - 1 >= 0 && tokens.get(i - 1).isOr("const", "encOp", "node", "var")) {
                     tokens.add(i, new TokenPair("op", "\\cdot"));
                     i = 0;
-                } else if (i + 1 < tokens.size() && tokens.get(i + 1).isOr("const", "encOp", "node", "trigFun", "struct")) {
+                } else if (i + 1 < tokens.size() && tokens.get(i + 1).isOr("const", "encOp", "node", "trigFun", "struct", "var")) {
                     tokens.add(i + 1, new TokenPair("op", "\\cdot"));
                     i = 0;
                 }
@@ -394,7 +396,9 @@ public class Equation {
 
     public ExtendedList<EquationActions> getActions() {
         var a = new ExtendedList<EquationActions>();
-        if (comparing)
+        if (comparing && hasVars)
+            a.add(EquationActions.SOLVE);
+        else if (comparing)
             a.add(EquationActions.COMPARE);
         else
             a.add(EquationActions.SIMPLIFY);
@@ -406,12 +410,14 @@ public class Equation {
 
         root.simplifyExpression(root, steps);
 
-        var beginning = new ActionTree(new TokenPair("comparison", "="));
-        beginning.insert(steps.get(0).step().getChild());
-        beginning.insert(steps.last().step().getChild());
-        steps.add(0, new OperationStep(beginning, "", ""));
+        if (!steps.last().prefix().isEmpty()) {
+            var beginning = new ActionTree(steps.last().prefix());
+            beginning.insert(steps.get(0).step().getChild());
+            beginning.insert(steps.last().step().getChild());
+            steps.add(0, new OperationStep(beginning, ""));
 
-        steps.remove(1);
+            steps.remove(1);
+        }
 
         return steps;
     }
@@ -419,11 +425,36 @@ public class Equation {
     public ExtendedList<OperationStep> compareExpression() {
         ExtendedList<OperationStep> steps = new ExtendedList<>();
 
+        root.compareExpression(root, steps);
+
+        var beginning = new ActionTree(steps.last().prefix());
+        beginning.insert(steps.get(0).step().getChild());
+        beginning.insert(steps.last().step().getChild());
+        steps.add(0, new OperationStep(beginning, ""));
+
+        steps.remove(1);
+
+        return steps;
+    }
+
+    public ExtendedList<OperationStep> solveEquation() {
+        ExtendedList<OperationStep> steps = new ExtendedList<>();
+
+        root.solveEquation(root, steps);
+
+        var beginning = new ActionTree(steps.last().prefix());
+        beginning.insert(steps.get(0).step().getChild());
+        beginning.insert(steps.last().step().getChild());
+        steps.add(0, new OperationStep(beginning, ""));
+
+        steps.remove(1);
+
         return steps;
     }
 
     enum EquationActions {
         SIMPLIFY,
-        COMPARE
+        COMPARE,
+        SOLVE
     }
 }

@@ -22,6 +22,7 @@ public class ActionTree implements Cloneable {
     private TokenPair encOperator = null;
     private TokenPair value;
     private ExtendedList<ActionTree> children = new ExtendedList<>();
+    private boolean formatNum = true;
 
     public ActionTree(TokenPair value) {
         this.value = value;
@@ -132,7 +133,7 @@ public class ActionTree implements Cloneable {
         return "1.0";
     }
 
-    private static void removeAddition(ActionTree tree) {
+    private static void tryRemoveParent(ActionTree tree) {
         if (tree.children.size() == 1) {
             tree.value = tree.children.get(0).value;
             tree.children = tree.children.get(0).children;
@@ -155,9 +156,11 @@ public class ActionTree implements Cloneable {
 
 
         if (this.value.is("num")) {
-            ltx.append(FORMAT.format(Double.parseDouble(this.value.value())));
+            ltx.append(formatNum ? FORMAT.format(Double.parseDouble(this.value.value())) : this.value.value());
         } else if (this.value.is("var")) {
             ltx.append(this.value.value());
+        } else if (this.value.is("text")) {
+            ltx.append("\\text{").append(this.value().value()).append("}");
         } else
             Equation.EXPRESSIONS.get(this.value().value()).toLatex(ltx, this.value, this.children);
 
@@ -173,12 +176,19 @@ public class ActionTree implements Cloneable {
             ActionTree rootCl = root._clone();
             rootCl.omitParentheses();
             rootCl.applyNegativeSigns();
-            steps.add(new OperationStep(rootCl, "", ""));
+            steps.add(new OperationStep(rootCl, ""));
             this.children.get(0).simplifyExpression(root, steps);
             return;
         }
 
-        root.execute((a, b) -> steps.add(new OperationStep(a._clone(), b, "=")));
+        root.simplify((a, b) -> {
+            String prefix = "=";
+            if (a.getChild().value().is("num")) {
+                prefix = "\\approx";
+                formatNum = false;
+            }
+            steps.add(new OperationStep(a._clone(), b, new TokenPair("comparison", prefix)));
+        });
     }
 
     public void compareExpression(ActionTree root, ExtendedList<OperationStep> steps) {
@@ -186,15 +196,32 @@ public class ActionTree implements Cloneable {
             ActionTree rootCl = root._clone();
             rootCl.omitParentheses();
             rootCl.applyNegativeSigns();
-            steps.add(new OperationStep(rootCl, "", ""));
+            steps.add(new OperationStep(rootCl, ""));
             this.children.get(0).compareExpression(root, steps);
             return;
         }
 
-        root.execute((a, b) -> steps.add(new OperationStep(a._clone(), b, "\\implies")));
+        root.simplify((a, b) -> steps.add(new OperationStep(a._clone(), b, new TokenPair("logic", "\\implies"))));
+        root.convertComparison();
+        steps.add(new OperationStep(root._clone(), "", new TokenPair("logic", "\\implies")));
     }
 
-    private void execute(BiConsumer<ActionTree, String> onChange) {
+    public void solveEquation(ActionTree root, ExtendedList<OperationStep> steps) {
+        if (this.value.is("root")) {
+            ActionTree rootCl = root._clone();
+            rootCl.omitParentheses();
+            rootCl.applyNegativeSigns();
+            steps.add(new OperationStep(rootCl, ""));
+            this.children.get(0).compareExpression(root, steps);
+            return;
+        }
+
+        root.simplify((a, b) -> steps.add(new OperationStep(a._clone(), b, new TokenPair("logic", "\\implies"))));
+        root.solve((a, b) -> steps.add(new OperationStep(a._clone(), b, new TokenPair("logic", "\\implies"))));
+        steps.add(new OperationStep(root._clone(), "", new TokenPair("logic", "\\implies")));
+    }
+
+    private void simplify(BiConsumer<ActionTree, String> onChange) { // \frac{5}{4}\cdot \frac{7}{9}+\frac{7}{6}
         StringBuilder message = new StringBuilder();
         omitParentheses();
         applyNegativeSigns();
@@ -227,7 +254,16 @@ public class ActionTree implements Cloneable {
             }
 
             message = new StringBuilder();
-            if (executeOperators(message)) {
+            if (executeNumOperators(message)) {
+                omitParentheses();
+                applyNegativeSigns();
+                onChange.accept(this, message.toString());
+                i = -1;
+                continue;
+            }
+
+            message = new StringBuilder();
+            if (executeNonNumOperators(message)) {
                 omitParentheses();
                 applyNegativeSigns();
                 onChange.accept(this, message.toString());
@@ -245,6 +281,15 @@ public class ActionTree implements Cloneable {
             }
 
             message = new StringBuilder();
+            if (executeConstruct(message)) {
+                omitParentheses();
+                applyNegativeSigns();
+                onChange.accept(this, message.toString());
+                i = -1;
+                continue;
+            }
+
+            message = new StringBuilder();
             if (constToNum(message)) {
                 omitParentheses();
                 applyNegativeSigns();
@@ -252,6 +297,35 @@ public class ActionTree implements Cloneable {
                 i = -1;
             }
         }
+    }
+
+    private void solve(BiConsumer<ActionTree, String> onChange) {
+        StringBuilder message = new StringBuilder();
+        omitParentheses();
+        applyNegativeSigns();
+        for (int i = 0; i < 1; i++) {
+
+        }
+    }
+
+    private void convertComparison() {
+        if (this.value().is("comparison")) {
+            if (this.children.get(0).value().is("num") && this.children.get(1).value().is("num")) {
+                var d1 = Double.parseDouble(this.children.get(0).value().value());
+                var d2 = Double.parseDouble(this.children.get(1).value().value());
+                Expression.ComparisonOperator op = ((Expression.ComparisonOperator) Equation.EXPRESSIONS.get(this.value().value()));
+                if (op.execute(d1, d2)) {
+                    this.value = new TokenPair("text", "True");
+                    this.children.clear();
+                    this.encOperator = new TokenPair("encOp", "{");
+                } else {
+                    this.value = new TokenPair("text", "False");
+                    this.children.clear();
+                    this.encOperator = new TokenPair("encOp", "{");
+                }
+            }
+        } else
+            this.children.forEach(ActionTree::convertComparison);
     }
 
     /**
@@ -306,6 +380,7 @@ public class ActionTree implements Cloneable {
                 double val = -Double.parseDouble(child.value());
                 a.children.clear();
                 a.value = new TokenPair(val);
+                a.encOperator = null;
             }
         });
 
@@ -322,17 +397,20 @@ public class ActionTree implements Cloneable {
             for (int i = 0; i < this.children.size(); i++) {
                 if (this.value.equals("op", "\\cdot") && this.children.get(i).value.equalsNumber(1)) {
                     this.children.removeIndices(i);
+                    tryRemoveParent(this);
                     message.append("In multiplication, 1 is ignored such that <mth-f> x \\cdot 1 = x </mth-f>");
                     changed.set(true);
                     break;
                 } else if (this.value.equals("op", "\\cdot") && this.children.get(i).value.equalsNumber(0)) {
                     this.value = new TokenPair("num", "0.0");
                     this.children.clear();
+                    tryRemoveParent(this);
                     message.append("When any number is multiplied by 0, the resulting product is always 0 such that <mth-f> x \\cdot 0 = 0 </mth-f>");
                     changed.set(true);
                     break;
                 } else if (this.value.equals("op", "+") && this.children.get(i).value.equalsNumber(0)) {
                     this.children.removeIndices(i);
+                    tryRemoveParent(this);
                     message.append("In addition, 0 is ignored such that <mth-f> x + 0 = x </mth-f>");
                     changed.set(true);
                     break;
@@ -401,7 +479,6 @@ public class ActionTree implements Cloneable {
      * Omits fraction denominated with 1      &#x09; &#x09;     x/1 = x <br>
      * Cancels any pairs of inverse numbers    &#x09;           x*(1/x) = 1 <br>
      * Long Division (Means and extremes)    &#x09;       (a/b)/(c/d) = ad/bc <br>
-     * Merge multiplicands and fraction  &#x09;&#x09;           x*(1/y) = x/y <br>
      * Simplify with GCD      &#x09;&#x09;                  x/y = (x * gcd(x, y)) / (y * gcd(x, y)) <br>
      */
     private boolean simplifyFraction(StringBuilder message) {
@@ -460,22 +537,6 @@ public class ActionTree implements Cloneable {
                     message.append("Simplify long division using <mth-f>\\frac{ \\frac{a}{b} }{ \\frac{c}{d} } = \\frac{ a \\cdot d }{ b \\cdot c }</mth-f> rule.");
                     changed.set(true);
                     break;
-                } else if (this.value().equals("op", "\\cdot")) {
-                    ActionTree product = new ActionTree(new TokenPair("op", "\\cdot"));
-                    this.children.get(actionTree -> !actionTree.value().equals("struct", "\\frac")).forEach(product::insert);
-                    if (num.value().equals("op", "\\cdot"))
-                        num.children.forEach(product::insert);
-                    else
-                        product.insert(num);
-
-                    product.encOperator = num.encOperator;
-                    a.children.set(0, product);
-
-                    this.value = a.value();
-                    this.children = a.children;
-
-                    message.append("Calculate product using <mth-f>x \\cdot \\frac{1}{y} = \\frac{x}{y}</mth-f> rule.");
-                    changed.set(true);
                 } else if (num.value().equals("op", "\\cdot") && den.value().equals("op", "\\cdot")) {
                     var numerator = GuavaHelper.ofMultiset(num.children.toArray(ActionTree[]::new));
                     var denominator = GuavaHelper.ofMultiset(den.children.toArray(ActionTree[]::new));
@@ -489,19 +550,21 @@ public class ActionTree implements Cloneable {
                     }
 
                     if (!changed.get()) {
-                        var nums1 = num.children.get(at -> at.value().is("num"));
-                        var nums2 = den.children.get(at -> at.value().is("num"));
-                        if (nums1.count() == 1 && nums2.count() == 1) {
-                            var num1 = nums1.findAny().orElse(null);
-                            var num2 = nums2.findAny().orElse(null);
+                        var nums1 = num.children.get(at -> at.value().is("num")).toList();
+                        var nums2 = den.children.get(at -> at.value().is("num")).toList();
+                        if (nums1.size() == 1 && nums2.size() == 1) {
+                            var num1 = nums1.get(0);
+                            var num2 = nums2.get(0);
 
                             double d1 = Double.parseDouble(num1.value().value());
                             double d2 = Double.parseDouble(num2.value().value());
                             double gcd = MathHelper.gcd(d1, d2);
-                            num1.value = new TokenPair("num", "" + (d1 / gcd));
-                            num2.value = new TokenPair("num", "" + (d2 / gcd));
-                            message.append("Simplify by dividing the numbers ").append(d1).append(" and ").append(d2).append(" by their GCD(Greatest Common Divisor).");
-                            changed.set(true);
+                            if (gcd != 1) {
+                                num1.value = new TokenPair("num", "" + (d1 / gcd));
+                                num2.value = new TokenPair("num", "" + (d2 / gcd));
+                                message.append("Simplify by dividing the numbers ").append(d1).append(" and ").append(d2).append(" by their GCD(Greatest Common Divisor).");
+                                changed.set(true);
+                            }
                         }
                     }
                 } else if (num.value().equals("op", "\\cdot") || den.value().equals("op", "\\cdot")) {
@@ -527,17 +590,19 @@ public class ActionTree implements Cloneable {
                     }
 
                     if (!changed.get()) {
-                        var nums = opposite.children.get(at -> at.value().is("num"));
-                        if (root.value().is("num") && nums.count() == 1) {
-                            var number = nums.findAny().orElse(null);
+                        var nums = opposite.children.get(at -> at.value().is("num")).toList();
+                        if (root.value().is("num") && nums.size() == 1) {
+                            var number = nums.get(0);
 
                             double d1 = Double.parseDouble(root.value().value());
                             double d2 = Double.parseDouble(number.value().value());
                             double gcd = MathHelper.gcd(d1, d2);
-                            root.value = new TokenPair("num", "" + (d1 / gcd));
-                            number.value = new TokenPair("num", "" + (d2 / gcd));
-                            message.append("Simplify by dividing the numbers ").append(d1).append(" and ").append(d2).append(" by their GCD(Greatest Common Divisor).");
-                            changed.set(true);
+                            if (gcd != 1) {
+                                root.value = new TokenPair("num", "" + (d1 / gcd));
+                                number.value = new TokenPair("num", "" + (d2 / gcd));
+                                message.append("Simplify by dividing the numbers ").append(d1).append(" and ").append(d2).append(" by their GCD(Greatest Common Divisor).");
+                                changed.set(true);
+                            }
                         }
                     }
                 } else if (num.equals(den)) {
@@ -549,10 +614,12 @@ public class ActionTree implements Cloneable {
                     double d1 = Double.parseDouble(num.value().value());
                     double d2 = Double.parseDouble(den.value().value());
                     double gcd = MathHelper.gcd(d1, d2);
-                    num.value = new TokenPair("num", "" + (d1 / gcd));
-                    den.value = new TokenPair("num", "" + (d2 / gcd));
-                    message.append("Simplify by dividing the numbers ").append(d1).append(" and ").append(d2).append(" by their GCD(Greatest Common Divisor).");
-                    changed.set(true);
+                    if (gcd != 1) {
+                        num.value = new TokenPair("num", "" + (d1 / gcd));
+                        den.value = new TokenPair("num", "" + (d2 / gcd));
+                        message.append("Simplify by dividing the numbers ").append(d1).append(" and ").append(d2).append(" by their GCD(Greatest Common Divisor).");
+                        changed.set(true);
+                    }
                 }
             }
         }
@@ -567,14 +634,13 @@ public class ActionTree implements Cloneable {
 
     /**
      * Executes operators for numbers. <br>
-     * Addition for common factors       &#x09; &#x09;     ax + bx = (a + b)x <br>
-     * Least common denominator         &#x09; &#x09;      a/b + c/d = (ad+cb)/bd <br>
      */
-    private boolean executeOperators(StringBuilder message) {
+    private boolean executeNumOperators(StringBuilder message) {
         AtomicBoolean changed = new AtomicBoolean();
 
         if (this.value.is("op")) {
             String msg = "";
+
             var nums = this.children.get(a -> a.value.is("num")).collect(Collectors.toCollection(ExtendedList::new));
             while (nums.size() > 1) {
                 ActionTree child1 = null;
@@ -588,118 +654,21 @@ public class ActionTree implements Cloneable {
                         break;
                 }
 
-                if (child1 == null || child2 == null)
+                if (child1 == null || child2 == null) {
                     break;
-                else if (child1.value.is("num") && child2.value.is("num")) {
+                } else if (child1.value.is("num") && child2.value.is("num")) {
                     double val1 = Double.parseDouble(child1.value.value());
                     double val2 = Double.parseDouble(child2.value.value());
 
-                    if (!this.children.remove(child1))
-                        System.out.println("Child did not exist in list, so remove function is SHITE");
-                    if (!this.children.remove(child2))
-                        System.out.println("Child did not exist in list, so remove function is SHITE");
-
                     Expression.Operator op = (Expression.Operator) Equation.EXPRESSIONS.get(this.value.value());
                     this.children.add(new ActionTree(new TokenPair(op.apply(val1, val2))));
+                    this.children.remove(child1);
+                    this.children.remove(child2);
 
-                    removeAddition(this);
+                    tryRemoveParent(this);
                     nums = this.children.get(a -> a.value.is("num")).collect(Collectors.toCollection(ExtendedList::new));
                     changed.set(true);
-                    msg = "Calculate the " + op.verbose() + " of " + FORMAT.format(val1) + " and " + FORMAT.format(val2);
-                }
-            }
-
-            if (!changed.get()) {
-                var non_nums = this.children.get(a -> !a.value.is("num")).collect(Collectors.toCollection(ExtendedList::new));
-                int last1 = 0;
-                int last2 = -1;
-                while (non_nums.size() > last1) {
-                    ActionTree child1 = null;
-                    ActionTree child2 = null;
-
-                    for (int i = last1; i < non_nums.size(); i++) {
-                        if (child1 == null) {
-                            child1 = non_nums.get(i);
-                            last1 = i;
-                        }
-                        for (int j = last2 + 1; j < non_nums.size(); j++) {
-                            if (j == last1) continue;
-                            if (child2 == null) {
-                                child2 = non_nums.get(j);
-                                last2 = j;
-                                if (j == non_nums.size() - 1) {
-                                    last1++;
-                                    last2 = 0;
-                                }
-                            }
-                        }
-                    }
-
-                    if (child1 == null || child2 == null)
-                        break;
-                    else if (this.value().has("+")) {
-                        if (child1.value().equals("struct", "\\frac") && child2.value().equals("struct", "\\frac")) {
-                            var a = child1.children.get(0);
-                            var b = child1.children.get(1);
-                            var c = child2.children.get(0);
-                            var d = child2.children.get(1);
-
-                            var newFrac = new ActionTree(new TokenPair("struct", "\\frac"));
-
-                            var newNum = new ActionTree(new TokenPair("op", "+"));
-                            var ad = new ActionTree(new TokenPair("op", "\\cdot"));
-                            ad.insert(a);
-                            ad.insert(d);
-                            var cb = new ActionTree(new TokenPair("op", "\\cdot"));
-                            cb.insert(c);
-                            cb.insert(b);
-                            newNum.insert(ad);
-                            newNum.insert(cb);
-                            newNum.encOperator = a.encOperator;
-
-                            var newDen = new ActionTree(new TokenPair("op", "\\cdot"));
-                            newDen.insert(b);
-                            newDen.insert(d);
-                            newDen.encOperator = b.encOperator;
-
-                            newFrac.insert(newNum);
-                            newFrac.insert(newDen);
-
-                            this.children.remove(child1);
-                            this.children.remove(child2);
-                            this.children.add(newFrac);
-
-                            removeAddition(this);
-
-                            non_nums = this.children.get(at -> !at.value.is("num")).collect(Collectors.toCollection(ExtendedList::new));
-                            changed.set(true);
-                            msg = "Find Least Common Denominator (LCD) and rewrite the fraction using <mth-f> \\frac{a}{b} + \\frac{c}{d} = \\frac{a \\cdot d + c \\cdot b}{b \\cdot d} </mth-f> rule.";
-                        } else if (compareProducts(child1, child2)) {
-                            double val1 = Double.parseDouble(getProductValue(child1));
-                            double val2 = Double.parseDouble(getProductValue(child2));
-
-                            var at = new ActionTree(new TokenPair("op", "\\cdot"));
-                            at.insert(new ActionTree(new TokenPair("num", "" + (val1 + val2))));
-                            if (child1.value().equals("op", "\\cdot"))
-                                child1.children.get(a -> !a.value.is("num")).forEach(at::insert);
-                            else if (child2.value().equals("op", "\\cdot"))
-                                child2.children.get(a -> !a.value.is("num")).forEach(at::insert);
-                            else
-                                at.insert(child1);
-
-                            this.children.remove(child1);
-                            this.children.remove(child2);
-                            this.children.add(at);
-
-                            removeAddition(this);
-
-                            non_nums = this.children.get(a -> !a.value.is("num")).collect(Collectors.toCollection(ExtendedList::new));
-                            changed.set(true);
-                            msg = "Add the coefficients of the common factors.";
-                        }
-                    } else {
-                        break;
-                    }
+                    msg = "Calculate the " + op.verbose() + ".";
                 }
             }
 
@@ -708,12 +677,191 @@ public class ActionTree implements Cloneable {
         }
 
         this.children.forEach(a -> {
-            if (!changed.get() && a.executeOperators(message))
+            if (!changed.get() && a.executeNumOperators(message))
                 changed.set(true);
         });
 
         return changed.get();
     }
+
+    /**
+     * Addition for common factors       &#x09; &#x09;     ax + bx = (a + b)x <br>
+     * Fraction Addition using LCD         &#x09; &#x09;      a/b + c/d = (ad+cb)/bd <br>
+     * Fraction Multiplication
+     */
+    private boolean executeNonNumOperators(StringBuilder message) {
+        AtomicBoolean changed = new AtomicBoolean();
+
+
+        if (this.value.is("op")) {
+            String msg = "";
+
+            ActionTree child1 = null;
+            ActionTree child2 = null;
+            var non_nums = this.children.get(a -> !a.value.is("num")).collect(Collectors.toCollection(ExtendedList::new));
+            int last1 = 0;
+            int last2 = -1;
+            while (non_nums.size() > last1) {
+
+                for (int i = last1; i < non_nums.size(); i++) {
+                    if (child1 == null) {
+                        child1 = non_nums.get(i);
+                        last1 = i;
+                    }
+                    for (int j = last2 + 1; j < non_nums.size(); j++) {
+                        if (j == last1) continue;
+                        if (child2 == null) {
+                            child2 = non_nums.get(j);
+                            last2 = j;
+                            if (j == non_nums.size() - 1) {
+                                last1++;
+                                last2 = 0;
+                            }
+                        }
+                    }
+                }
+
+                if (child1 == null || child2 == null) {
+                    break;
+                } else if (this.value().has("+")) {
+                    if (child1.value().equals("struct", "\\frac") && child2.value().equals("struct", "\\frac")) {
+                        var a = child1.children.get(0);
+                        var b = child1.children.get(1);
+                        var c = child2.children.get(0);
+                        var d = child2.children.get(1);
+
+                        var newFrac = new ActionTree(new TokenPair("struct", "\\frac"));
+
+                        var newNum = new ActionTree(new TokenPair("op", "+"));
+                        var ad = new ActionTree(new TokenPair("op", "\\cdot"));
+                        ad.insert(a);
+                        ad.insert(d);
+                        var cb = new ActionTree(new TokenPair("op", "\\cdot"));
+                        cb.insert(c);
+                        cb.insert(b);
+                        newNum.insert(ad);
+                        newNum.insert(cb);
+                        newNum.encOperator = a.encOperator;
+
+                        var newDen = new ActionTree(new TokenPair("op", "\\cdot"));
+                        newDen.insert(b);
+                        newDen.insert(d);
+                        newDen.encOperator = b.encOperator;
+
+                        newFrac.insert(newNum);
+                        newFrac.insert(newDen);
+
+                        this.children.remove(child1);
+                        this.children.remove(child2);
+                        this.children.add(newFrac);
+
+                        tryRemoveParent(this);
+
+                        non_nums = this.children.get(at -> !at.value.is("num")).collect(Collectors.toCollection(ExtendedList::new));
+                        changed.set(true);
+                        msg = "Find Least Common Denominator (LCD) and rewrite the fraction sum using <mth-f> \\frac{a}{b} + \\frac{c}{d} = \\frac{a \\cdot d + c \\cdot b}{b \\cdot d} </mth-f> rule.";
+                    } else if (compareProducts(child1, child2)) {
+                        double val1 = Double.parseDouble(getProductValue(child1));
+                        double val2 = Double.parseDouble(getProductValue(child2));
+
+                        var at = new ActionTree(new TokenPair("op", "\\cdot"));
+                        at.insert(new ActionTree(new TokenPair("num", "" + (val1 + val2))));
+                        if (child1.value().equals("op", "\\cdot"))
+                            child1.children.get(a -> !a.value.is("num")).forEach(at::insert);
+                        else if (child2.value().equals("op", "\\cdot"))
+                            child2.children.get(a -> !a.value.is("num")).forEach(at::insert);
+                        else
+                            at.insert(child1);
+
+                        this.children.remove(child1);
+                        this.children.remove(child2);
+                        this.children.add(at);
+
+                        tryRemoveParent(this);
+
+                        non_nums = this.children.get(a -> !a.value.is("num")).collect(Collectors.toCollection(ExtendedList::new));
+                        changed.set(true);
+                        msg = "Add the coefficients of the common factors.";
+                    } else {
+                        break;
+                    }
+                } else if (this.value().has("\\cdot")) {
+                    if (child1.value().equals("struct", "\\frac") && child2.value().equals("struct", "\\frac")) {
+                        var a = child1.children.get(0);
+                        var b = child1.children.get(1);
+                        var c = child2.children.get(0);
+                        var d = child2.children.get(1);
+
+                        var newFrac = new ActionTree(new TokenPair("struct", "\\frac"));
+                        var newNum = new ActionTree(new TokenPair("op", "\\cdot"));
+                        newNum.insert(a);
+                        newNum.insert(c);
+                        newNum.encOperator = a.encOperator;
+                        var newDen = new ActionTree(new TokenPair("op", "\\cdot"));
+                        newDen.insert(b);
+                        newDen.insert(d);
+                        newDen.encOperator = b.encOperator;
+
+                        newFrac.insert(newNum);
+                        newFrac.insert(newDen);
+
+                        this.children.remove(child1);
+                        this.children.remove(child2);
+                        this.children.add(newFrac);
+
+                        tryRemoveParent(this);
+                        non_nums = this.children.get(at -> !at.value.is("num")).collect(Collectors.toCollection(ExtendedList::new));
+                        changed.set(true);
+                        msg = "Calculate the product of the fractions.";
+                    } else if (child1.value().equals("struct", "\\frac") && child2.value().equals("struct", "\\frac")) {
+                        ActionTree a, b, c;
+                        if (child1.value().equals("struct", "\\frac")) {
+                            a = child1.children.get(0);
+                            b = child1.children.get(1);
+                            c = child2;
+                        } else {
+                            a = child2.children.get(0);
+                            b = child2.children.get(1);
+                            c = child1;
+                        }
+
+                        var newFrac = new ActionTree(new TokenPair("struct", "\\frac"));
+                        var newNum = new ActionTree(new TokenPair("op", "\\cdot"));
+                        newNum.insert(a);
+                        newNum.insert(c);
+                        newNum.encOperator = a.encOperator;
+
+                        newFrac.insert(newNum);
+                        newFrac.insert(b);
+
+                        this.children.remove(child1);
+                        this.children.remove(child2);
+                        this.children.add(newFrac);
+
+                        tryRemoveParent(this);
+                        non_nums = this.children.get(at -> !at.value.is("num")).collect(Collectors.toCollection(ExtendedList::new));
+                        changed.set(true);
+                        msg = "Calculate the product of the fractions.";
+                    } else {
+                        break;
+                    }
+                } else {
+                    break;
+                }
+            }
+
+            if (changed.get())
+                message.append(msg);
+        }
+
+        this.children.forEach(a -> {
+            if (!changed.get() && a.executeNonNumOperators(message))
+                changed.set(true);
+        });
+
+        return changed.get();
+    }
+
 
     /**
      * Executes trigonometric functions.
@@ -725,7 +873,7 @@ public class ActionTree implements Cloneable {
             if (!changed.get()) {
                 Expression.TrigonometricFunction fun = ((Expression.TrigonometricFunction) Equation.EXPRESSIONS.get(a.value.value()));
                 var input = a.children.get(0);
-                input.execute((o1, o2) -> {
+                input.simplify((o1, o2) -> {
                 });
                 if (input.value.is("num")) {
                     Equation val = fun.execute(Double.parseDouble(input.value.value()));
@@ -754,6 +902,16 @@ public class ActionTree implements Cloneable {
 
         this.children.get(a -> a.value.is("struct")).forEach(a -> {
             if (!changed.get()) {
+                Expression.Construct struct = ((Expression.Construct) Equation.EXPRESSIONS.get(a.value.value()));
+                ActionTree[] inputs = a.children.toArray(ActionTree[]::new);
+                ActionTree result = struct.execute(inputs);
+                if (result != null) {
+                    a.children.clear();
+                    a.value = result.value();
+                    a.children = result.children;
+                    changed.set(true);
+                    message.append("Calculate the ").append(struct.verbose()).append(".");
+                }
 
             }
         });

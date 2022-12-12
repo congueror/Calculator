@@ -127,8 +127,10 @@ public class Main extends JFrame {
         for (Equation.EquationActions action : actions) {
             if (action.equals(Equation.EquationActions.SIMPLIFY))
                 simplify(eval, eq);
-            if (action.equals(Equation.EquationActions.COMPARE))
+            else if (action.equals(Equation.EquationActions.COMPARE))
                 compare(eval, eq);
+            else if (action.equals(Equation.EquationActions.SOLVE))
+                solve(eval, eq);
             eval.append("area.innerHTML += \"<br>\"");
         }
 
@@ -151,12 +153,50 @@ public class Main extends JFrame {
         for (OperationStep step : steps) {
             String js = JSHelper.writeJS("""
                     operationStep(area, "!@#3 !@#1", "!@#2");
-                    """, step.step().toLatex(), step.message(), step.prefix());
+                    """, step.step().toLatex(), step.message(), step.prefix().value());
             eval.append(js);
         }
     }
 
     private void compare(StringBuilder eval, Equation eq) {
+        var steps = eq.compareExpression();
 
+        AtomicInteger yes = new AtomicInteger(0);
+        steps.forEach(o -> {
+            System.out.println(yes);
+            o.step().print();
+            yes.incrementAndGet();
+        });
+
+        eval.append(JSHelper.writeJS("""
+                area.innerHTML += "<b id='text'>Compare Expression:</b> <br>";
+                """));
+        for (OperationStep step : steps) {
+            String js = JSHelper.writeJS("""
+                    operationStep(area, "!@#3 !@#1", "!@#2");
+                    """, step.step().toLatex(), step.message(), step.prefix().value());
+            eval.append(js);
+        }
+    }
+
+    private void solve(StringBuilder eval, Equation eq) {
+        var steps = eq.solveEquation();
+
+        AtomicInteger yes = new AtomicInteger(0);
+        steps.forEach(o -> {
+            System.out.println(yes);
+            o.step().print();
+            yes.incrementAndGet();
+        });
+
+        eval.append(JSHelper.writeJS("""
+                area.innerHTML += "<b id='text'>Solve Equation:</b> <br>";
+                """));
+        for (OperationStep step : steps) {
+            String js = JSHelper.writeJS("""
+                    operationStep(area, "!@#3 !@#1", "!@#2");
+                    """, step.step().toLatex(), step.message(), step.prefix().value());
+            eval.append(js);
+        }
     }
 }

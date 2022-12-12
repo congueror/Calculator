@@ -12,8 +12,7 @@ public final class TokenPair implements Cloneable {
     }
 
     public TokenPair(double value) {
-        this.type = "num";
-        this.value = String.valueOf(value);
+        this("num", String.valueOf(value));
     }
 
     public String type() {
@@ -22,6 +21,14 @@ public final class TokenPair implements Cloneable {
 
     public String value() {
         return value;
+    }
+
+    public double getAsNum() {
+        return Double.parseDouble(value());
+    }
+
+    public boolean isEmpty() {
+        return type.equals("") || value.equals("");
     }
 
     public boolean is(String type) {

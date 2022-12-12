@@ -5,8 +5,11 @@ import net.congueror.calculator.structure.ActionTree;
 import net.congueror.calculator.structure.ExtendedList;
 import net.congueror.calculator.structure.TokenPair;
 
+import javax.annotation.Nullable;
+import java.util.Objects;
 import java.util.function.BiFunction;
 import java.util.function.Function;
+import java.util.function.Predicate;
 
 public abstract class Expression {
 
@@ -18,12 +21,13 @@ public abstract class Expression {
 
     public static void registerExpressions() {
         Equation.EXPRESSIONS.clear();
-        Equation.EXPRESSIONS.put("=", new ComparisonOperator());
-        Equation.EXPRESSIONS.put("\\ne", new ComparisonOperator());
-        Equation.EXPRESSIONS.put(">", new ComparisonOperator());
-        Equation.EXPRESSIONS.put("<", new ComparisonOperator());
-        Equation.EXPRESSIONS.put("\\ge", new ComparisonOperator());
-        Equation.EXPRESSIONS.put("\\le", new ComparisonOperator());
+        Equation.EXPRESSIONS.put("=", new ComparisonOperator(d -> MathHelper.equals(d[0], d[1])));
+        Equation.EXPRESSIONS.put("\\ne", new ComparisonOperator(d -> !MathHelper.equals(d[0], d[1])));
+        Equation.EXPRESSIONS.put("\\approx", new ComparisonOperator(d -> MathHelper.equals(d[0], d[1])));
+        Equation.EXPRESSIONS.put(">", new ComparisonOperator(d -> d[0] > d[1]));
+        Equation.EXPRESSIONS.put("<", new ComparisonOperator(d -> d[0] < d[1]));
+        Equation.EXPRESSIONS.put("\\ge", new ComparisonOperator(d -> d[0] >= d[1]));
+        Equation.EXPRESSIONS.put("\\le", new ComparisonOperator(d -> d[0] <= d[1]));
 
         Equation.EXPRESSIONS.put("\\implies", new LogicOperator());
 
@@ -40,7 +44,7 @@ public abstract class Expression {
         Equation.EXPRESSIONS.put("\\pi", new Constant(Math.PI));
         Equation.EXPRESSIONS.put("e", new Constant(Math.E));
 
-        Equation.EXPRESSIONS.put("\\frac", new Construct(2));
+        Equation.EXPRESSIONS.put("\\frac", new Construct("fraction", 2, ats -> MathHelper.fraction(ats[0], ats[1])));
 
         Equation.EXPRESSIONS.put("\\sin", new TrigonometricFunction("sine", a -> new Equation(String.valueOf(MathHelper.sin(a)))));
         Equation.EXPRESSIONS.put("\\cos", new TrigonometricFunction("cosine", a -> new Equation(String.valueOf(MathHelper.cos(a)))));
@@ -145,8 +149,14 @@ public abstract class Expression {
      */
     public static class ComparisonOperator extends Expression {
 
-        public ComparisonOperator() {
+        private final Predicate<double[]> predicate;
+        public ComparisonOperator(Predicate<double[]> predicate) {
             super("comparison");
+            this.predicate = predicate;
+        }
+
+        public boolean execute(double a, double b) {
+            return predicate.test(new double[] {a, b});
         }
 
         @Override
@@ -165,20 +175,38 @@ public abstract class Expression {
 
         @Override
         public void toLatex(StringBuilder ltx, TokenPair value, ExtendedList<ActionTree> children) {
-            ltx.append(value.value());
+            ltx.append(children.get(0).toLatex());
+            ltx.append(value.value()).append(" ");
+            ltx.append(children.get(1).toLatex());
         }
     }
 
     public static class Construct extends Expression {
 
+        private final String verbose;
         private final int inputs;
-        public Construct(int inputs) {
+        private final Function<ActionTree[], ActionTree> fun;
+        public Construct(String verbose, int inputs, Function<ActionTree[], ActionTree> fun) {
             super("struct");
+            this.verbose = verbose;
             this.inputs = inputs;
+            this.fun = fun;
+        }
+
+        public String verbose() {
+            return verbose;
         }
 
         public int inputs() {
             return inputs;
+        }
+
+        @Nullable
+        public ActionTree execute(ActionTree[] inputs) {
+            if (inputs.length != inputs()) {
+                throw new ArithmeticException("Invalid number of inputs in construct, " + verbose);
+            }
+            return fun.apply(inputs);
         }
 
         @Override
@@ -197,7 +225,7 @@ public abstract class Expression {
     public static class TrigonometricFunction extends Expression {
 
         private final String name;
-        private final java.util.function.Function<Double, Equation> fun;
+        private final Function<Double, Equation> fun;
         private final boolean inverse;
 
         public TrigonometricFunction(String name, Function<Double, Equation> fun, boolean inverse) {
